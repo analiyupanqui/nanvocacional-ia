@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="ÑanVocacional IA: prototipo de orientación vocacional basado en reglas RIASEC para secundaria en Apurímac. No guarda ni envía datos.">
+  <meta name="theme-color" content="#0f5c63">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
+  <title>ÑanVocacional IA</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230f5c63'/%3E%3Cpath d='M32 22c13 0 18 11 18 21s-7 15-18 15-18-5-18-15 5-21 18-21z' fill='%23f8f2e4'/%3E%3Cpolygon points='32,6 54,14 32,22 10,14' fill='%231f3b40'/%3E%3Cpath d='M32 14l17 3v8' stroke='%23e3b23c' stroke-width='3' fill='none'/%3E%3Ccircle cx='26' cy='38' r='3.5' fill='%231f2a2c'/%3E%3Ccircle cx='38' cy='38' r='3.5' fill='%231f2a2c'/%3E%3C/svg%3E">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="iconos/icono-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
+  <header class="barra">
+    <div class="barra__interior">
+      <a class="marca" href="#/" aria-label="ÑanVocacional IA, ir al inicio">
+        <span class="marca__logo" id="marca-logo"></span>
+        <span class="marca__texto">Ñan<span>Vocacional</span> <strong>IA</strong></span>
+      </a>
+      <div class="menu">
+        <button type="button" class="menu__boton" id="menu-boton" aria-expanded="false" aria-controls="menu-panel">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          <span>Menú</span>
+        </button>
+        <div class="menu__panel" id="menu-panel" hidden>
+          <a class="menu__item" href="#/" data-cierra-menu>Inicio</a>
+          <a class="menu__item" href="#/perfil" data-cierra-menu>Elegir perfil</a>
+          <a class="menu__item" href="#/docente/asistente" data-cierra-menu>Módulo docente</a>
+          <button type="button" class="menu__item menu__item--peligro" id="menu-terminar">Terminar y borrar</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="contenido" tabindex="-1">
+    <div id="app" class="contenedor">
+      <noscript><p class="nota nota--alerta">Esta aplicación necesita JavaScript activado.</p></noscript>
+    </div>
+  </main>
+
+  <footer class="pie">
+    <div class="contenedor">
+      <p><strong>Prototipo de demostración</strong> · No pide nombres · No guarda ni envía resultados · Reglas RIASEC explícitas, sin IA generativa · Las afinidades son orientativas, no probabilidades.</p>
+      <p class="pie__offline" id="estado-offline" role="status" aria-live="polite" hidden></p>
+    </div>
+  </footer>
+
+  <dialog id="dialogo-borrar" aria-labelledby="dialogo-titulo">
+    <form method="dialog" class="dialogo">
+      <h2 id="dialogo-titulo">¿Terminar y borrar?</h2>
+      <p>Se borrarán el perfil y los resultados de esta sesión. No se podrán recuperar.</p>
+      <div class="dialogo__acciones">
+        <button type="submit" value="cancelar" class="boton boton--secundario">Cancelar</button>
+        <button type="submit" value="borrar" class="boton boton--peligro" id="confirmar-borrar">Sí, borrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="aviso-flotante" class="aviso-flotante" role="status" aria-live="polite"></div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
