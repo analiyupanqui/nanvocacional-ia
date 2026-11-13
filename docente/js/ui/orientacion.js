@@ -48,13 +48,13 @@ export function avisoDesempateTecnico(perfil) {
 /** Interpretación breve y específica (solo describe letras con puntaje mayor que 0). */
 export function interpretarPerfil(perfil) {
   if (perfil.pocoDiferenciado) {
-    return `Los seis intereses tienen puntajes parecidos (D = ${fmtNum(perfil.D)}, menor que ${UMBRAL_D}). El código ${perfil.codigo} es solo orientativo: conviene explorarlo conversando, sin sacar conclusiones.`;
+    return `Los seis intereses tienen puntajes parecidos (D = ${fmtNum(perfil.D)}, menor que ${fmtNum(perfil.umbralD ?? UMBRAL_D)}). El código ${perfil.codigo} es solo orientativo: conviene explorarlo conversando, sin sacar conclusiones.`;
   }
   const reales = [...perfil.codigo].filter((l) => perfil.puntajes[l] > 0);
   const base = `${reales.length > 1 ? `Predominan los intereses ${unirLista(reales.map(nombre))}` : `Predomina el interés ${nombre(reales[0])}`}: suele atraerle ${reales.map(corto).join('; ')}.`;
   // Si hay desempate técnico, la interfaz lo muestra en un aviso aparte (no se repite aquí).
   if (letrasPorDesempateTecnico(perfil).length) return base;
-  return `${base} La diferencia entre su interés más alto y el más bajo es de ${fmtNum(perfil.D)} puntos (D), por encima del umbral provisional de ${UMBRAL_D}.`;
+  return `${base} La diferencia entre su interés más alto y el más bajo es de ${fmtNum(perfil.D)} puntos (D), por encima del umbral provisional de ${fmtNum(perfil.umbralD ?? UMBRAL_D)}.`;
 }
 
 /**
@@ -71,7 +71,7 @@ export function preguntasOrientativas(perfil) {
   const [a, b, c] = perfil.codigo;
   const lista = [];
   if (perfil.pocoDiferenciado) {
-    lista.push({ texto: 'Tus puntajes son parecidos: ¿qué actividades de la escuela o de tu comunidad disfrutas más, y por qué?', regla: 'Perfil poco diferenciado (D < 6)' });
+    lista.push({ texto: 'Tus puntajes son parecidos: ¿qué actividades de la escuela o de tu comunidad disfrutas más, y por qué?', regla: `Perfil poco diferenciado (D < ${fmtNum(perfil.umbralD ?? UMBRAL_D)})` });
   }
   const empate = perfil.empates.find((e) => e.letras.length >= 2 && e.puntaje > 0);
   if (empate) {
@@ -104,7 +104,7 @@ export function mensajeEtapa(etapa, r, { carreras = 0, otras = 0, preguntas = 0 
   if (etapa === 1) {
     if (p.pocoDiferenciado) return `Sus seis intereses están parejos (D = ${fmtNum(p.D)}). Tómalo como un punto de partida para conversar, no como una conclusión.`;
     const siguen = [b, c].filter((l) => !tecnico.includes(l));
-    return `Su interés más fuerte es ${nombre(a)} (${porcentaje(p.puntajes[a])} %)${siguen.length ? `; le ${siguen.length > 1 ? 'siguen' : 'sigue'} ${unirLista(siguen.map(nombre))}` : ''}.` +
+    return `Su interés más fuerte es ${nombre(a)} (${porcentaje(p.puntajes[a], p.escalaMax)} %)${siguen.length ? `; le ${siguen.length > 1 ? 'siguen' : 'sigue'} ${unirLista(siguen.map(nombre))}` : ''}.` +
       (tecnico.length ? ` Ojo: ${unirLista(tecnico.map(nombre))} ${tecnico.length > 1 ? 'aparecen' : 'aparece'} solo por desempate técnico.` : '');
   }
   if (etapa === 2) {

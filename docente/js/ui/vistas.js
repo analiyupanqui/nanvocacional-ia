@@ -35,12 +35,18 @@ const naniVivo = (texto, { expresion = 'feliz', clase = '', voz = true } = {}) =
   </div>`;
 
 // ---------- Bienvenida (se muestra una vez al abrir la app en la portada) ----------
+// Bienvenida 0.8.1: Ñani entre nubes saluda con una nube de diálogo y ofrece «¡Vamos a comenzar!». La voz y el
+// destello sonoro solo se intentan al pulsar ese botón (Android no permite sonido antes de una interacción).
+// El saludo siempre queda escrito. Silenciar a Ñani sigue disponible con el botón del altavoz de la barra.
 export function vistaBienvenida() {
   return `
-  <div class="bienvenida__tarjeta">
+  <div class="bienvenida__cielo" aria-hidden="true">
+    <span class="nube nube--1"></span><span class="nube nube--2"></span><span class="nube nube--3"></span><span class="nube nube--4"></span>
+  </div>
+  <div class="bienvenida__tarjeta" role="dialog" aria-modal="true" aria-labelledby="bienvenida-texto">
+    <p class="bienvenida__dialogo" id="bienvenida-texto">${esc(SALUDO)}</p>
     <span class="nani-vivo nani-vivo--bienvenida">${nani({ expresion: 'saludo' })}</span>
-    <p class="bienvenida__saludo" id="bienvenida-texto">${esc(SALUDO)}</p>
-    <p class="bienvenida__pista" id="bienvenida-pista" hidden>${ICONO_VOZ} Toca para escucharme</p>
+    <button type="button" class="boton boton--principal bienvenida__comenzar" data-bienvenida="comenzar">¡Vamos a comenzar!</button>
   </div>`;
 }
 

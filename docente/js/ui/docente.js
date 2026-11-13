@@ -2,7 +2,40 @@
 // Pestañas: «Asistente de orientación» (principal), «Guía breve» y «Catálogo» (secundario).
 // Información técnica en una página discreta (#/docente/tecnico), fuera de la navegación principal.
 // Sin cuentas, bases de datos ni historiales: los puntajes viven solo en memoria.
-import { LETRAS, PUNTAJE_MAX, UMBRAL_D, fmtNum } from '../core/riasec.js';
+import { LETRAS, UMBRAL_D, umbralD, fmtNum } from '../core/riasec.js';
+
+// ---------- Ajustes finales 0.8.1 ----------
+/** Escala del analizador docente: la MISMA del cuestionario del estudiante (0–20 por interés). El motor normaliza
+ *  con escalaMax = 20 (Ai con r = puntaje / 20; umbral D = 3): resultados idénticos a los de 0–40 con los puntajes × 2. */
+export const ESCALA_DOCENTE = 20;
+/** Saludo breve de Ñani al ingresar al módulo docente (se intenta en voz al pulsar «Ingresar»). */
+export const SALUDO_DOCENTE = '¡Hola! Soy Ñani. Te acompaño a interpretar los resultados y a explorar el catálogo.';
+/** Barrera de acceso DEMOSTRATIVA (GitHub Pages es estático): no es seguridad real; la clave está en el código público. */
+const ACCESO_DEMO = Object.freeze({ usuario: 'docente', contrasena: '123456' });
+export const credencialesValidas = (usuario, contrasena) => String(usuario ?? '').trim().toLowerCase() === ACCESO_DEMO.usuario && String(contrasena ?? '') === ACCESO_DEMO.contrasena;
+
+/** Pantalla de ingreso del módulo docente (app docente). No guarda datos personales. */
+export function vistaAccesoDocente({ error = '' } = {}) {
+  return `
+  <section class="acceso-docente-vista">
+    <h1 tabindex="-1" data-enfoque>Acceso para docentes y tutores</h1>
+    <form class="tarjeta" id="form-acceso" novalidate autocomplete="off">
+      ${error ? `<p class="errores" role="alert">${esc(error)}</p>` : ''}
+      <div class="campo">
+        <label for="acceso-usuario">Usuario</label>
+        <input id="acceso-usuario" name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false"${error ? ' aria-invalid="true"' : ''}>
+      </div>
+      <div class="campo">
+        <label for="acceso-contrasena">Contraseña</label>
+        <input id="acceso-contrasena" name="contrasena" type="password" autocomplete="current-password"${error ? ' aria-invalid="true"' : ''}>
+      </div>
+      <div class="acciones-centro">
+        <button type="submit" class="boton boton--principal">Ingresar</button>
+        <a class="boton boton--secundario" href="../">Volver al inicio</a>
+      </div>
+    </form>
+  </section>`;
+}
 import { MIN_LETRAS_COINCIDENTES, PESO_AFINIDAD, PESO_PROXIMIDAD } from '../core/recomendador.js';
 import { CATALOGO } from '../data/catalogo.js';
 import { FUENTES } from '../data/fuentes.js';
@@ -47,13 +80,13 @@ function formularioPuntajes(est) {
     return `
     <div class="campo">
       <label for="d-${l}">${letraChip(l)} ${esc(TIPOS_RIASEC[l].nombre)}</label>
-      <input id="d-${l}" name="${l}" inputmode="decimal" autocomplete="off" value="${est.manual?.[l] != null ? esc(est.manual[l]) : ''}" placeholder="0–${PUNTAJE_MAX}"${invalido ? ' aria-invalid="true"' : ''}>
+      <input id="d-${l}" name="${l}" inputmode="decimal" autocomplete="off" value="${est.manual?.[l] != null ? esc(est.manual[l]) : ''}" placeholder="0–${ESCALA_DOCENTE}"${invalido ? ' aria-invalid="true"' : ''}>
     </div>`;
   }).join('');
   const provincias = OPCIONES_PROVINCIA.map((o) => `<option value="${esc(o.valor)}"${o.valor === est.provincia ? ' selected' : ''}>${esc(o.etiqueta)}</option>`).join('');
   return `
   <form class="tarjeta" id="form-docente" novalidate autocomplete="off">
-    <p>Escriba los seis puntajes del estudiante (0 a ${PUNTAJE_MAX}). Si vienen de la app del estudiante (sobre 20), multiplique cada uno por 2. <strong>No escriba nombres.</strong> Nada se guarda.</p>
+    <p>Escriba los seis puntajes del estudiante de 0 a ${ESCALA_DOCENTE}, tal como los muestra su cuestionario. <strong>No escriba nombres.</strong> Nada se guarda.</p>
     ${est.errores.length ? `<div class="errores" role="alert"><strong>Revise los puntajes:</strong><ul>${est.errores.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
     <div class="formulario-puntajes">${campos}</div>
     <div class="form-docente__pie">
@@ -86,14 +119,14 @@ function etapaComprender(p) {
   const intereses = [...p.codigo].map((l, i) => `
     <li class="interes-chico${tecnico.includes(l) ? ' interes-chico--tecnico' : ''}" style="--c:${COLOR_LETRA[l]}">
       <span class="interes__icono">${icono(l)}</span>
-      <span><strong>${i + 1}.º ${esc(TIPOS_RIASEC[l].nombre)}</strong><small>${tecnico.includes(l) ? 'Desempate técnico · 0&nbsp;%' : `${esc(TIPOS_RIASEC[l].corto)} · ${porcentaje(p.puntajes[l])}&nbsp;%`}</small></span>
+      <span><strong>${i + 1}.º ${esc(TIPOS_RIASEC[l].nombre)}</strong><small>${tecnico.includes(l) ? 'Desempate técnico · 0&nbsp;%' : `${esc(TIPOS_RIASEC[l].corto)} · ${porcentaje(p.puntajes[l], p.escalaMax)}&nbsp;%`}</small></span>
     </li>`).join('');
   const aviso = avisoDesempateTecnico(p);
   return `
   <ul class="intereses-chicos">${intereses}</ul>
   <p class="interpretacion-docente">${esc(interpretarPerfil(p))}</p>
   ${aviso ? `<p class="nota nota--alerta"><strong>Desempate técnico:</strong> ${esc(aviso)}</p>` : ''}
-  ${p.pocoDiferenciado ? '<p class="nota nota--alerta"><strong>Perfil poco diferenciado (D &lt; 6):</strong> converse con el estudiante antes de revisar carreras. Es una regla precautoria, no un diagnóstico.</p>' : ''}`;
+  ${p.pocoDiferenciado ? `<p class="nota nota--alerta"><strong>Perfil poco diferenciado (D &lt; ${fmtNum(p.umbralD ?? UMBRAL_D)}):</strong> converse con el estudiante antes de revisar carreras. Es una regla precautoria, no un diagnóstico.</p>` : ''}`;
 }
 
 function etapaConversar(preguntas) {
@@ -133,7 +166,7 @@ function resultadoAsistente(r, est) {
   <section class="tarjeta asistente" aria-labelledby="t-analisis">
     <div class="asistente__cabeza">
       <h2 id="t-analisis" class="h-seccion" tabindex="-1">Código ${codigoChips(p.codigo)}<span class="sr-only"> ${p.codigo}</span></h2>
-      ${p.pocoDiferenciado ? '<span class="etiqueta etiqueta--alerta">Perfil poco diferenciado (D &lt; 6)</span>' : ''}
+      ${p.pocoDiferenciado ? `<span class="etiqueta etiqueta--alerta">Perfil poco diferenciado (D &lt; ${fmtNum(p.umbralD ?? UMBRAL_D)})</span>` : ''}
     </div>
     <ol class="etapas" aria-label="Etapas de la orientación">${pasos}</ol>
     <div class="etapa" id="etapa-actual" data-etapa="${etapa}">
@@ -170,7 +203,7 @@ function pestanaGuia() {
   <ul class="lista-guia lista-guia--corta">
     <li>El código reúne los <strong>tres intereses más altos</strong>, en orden.</li>
     <li>El porcentaje muestra <strong>cuánto le atrae</strong> un área, no lo que sabe hacer.</li>
-    <li>Si los puntajes son parecidos (D &lt; ${UMBRAL_D}), <strong>conversen primero</strong>.</li>
+    <li>Si los puntajes son parecidos (D &lt; ${umbralD(ESCALA_DOCENTE)} en la escala 0–${ESCALA_DOCENTE}; equivale a D &lt; ${UMBRAL_D} en la escala 0–40 del artículo), <strong>conversen primero</strong>.</li>
   </ul>
   <h2 class="h-seccion">Durante la conversación</h2>
   <ul class="lista-guia lista-guia--corta">

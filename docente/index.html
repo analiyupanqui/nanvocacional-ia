@@ -81,6 +81,30 @@
   <div class="chat" id="chat-nani" role="dialog" aria-modal="true" aria-labelledby="chat-titulo" hidden></div>
 
   <div id="aviso-flotante" class="aviso-flotante" role="status" aria-live="polite"></div>
-  <script type="module" src="js/main.js"></script>
+  <script>
+    // Aviso de arranque (0.8.1): si la app no arranca (un archivo no llegó por la red, o una mezcla de versiones justo
+    // después de publicar), en lugar de una pantalla en blanco aparece «No terminó de cargar · Reintentar».
+    // Si la app arranca, aunque sea tarde, reemplaza este aviso. No guarda ni envía nada.
+    (function () {
+      var hecho = false;
+      function avisoCarga() {
+        if (hecho || document.documentElement.hasAttribute('data-app-lista')) return;
+        var app = document.getElementById('app');
+        if (!app) return;
+        hecho = true;
+        app.innerHTML = '<div class="aviso-carga" id="aviso-carga" role="alert" style="margin:24px auto;max-width:420px;padding:16px 18px;border:1px solid #d8cfbf;border-radius:16px;background:#fff;text-align:center">' +
+          '<p style="margin:0 0 12px;font-weight:700">No terminó de cargar</p>' +
+          '<button type="button" onclick="location.reload()" style="min-height:48px;padding:0 24px;border:0;border-radius:999px;background:#0f5c63;color:#fff;font:inherit;font-weight:700">Reintentar</button>' +
+          '<p style="margin:12px 0 0;font-size:.9rem;color:#5b6b6e">Revisa la conexión. Si sigue igual, espera unos minutos y vuelve a intentarlo.</p></div>';
+      }
+      window.__avisoCarga = avisoCarga;
+      // Errores de carga de los módulos de la app (antes de que arranque).
+      window.addEventListener('error', function (e) {
+        if (!document.documentElement.hasAttribute('data-app-lista') && (!e.filename || /\/js\//.test(e.filename) || e.target !== window)) setTimeout(avisoCarga, 1500);
+      }, true);
+      setTimeout(avisoCarga, 10000); // red muy lenta o sin respuesta
+    })();
+  </script>
+  <script type="module" src="js/main.js" onerror="window.__avisoCarga && window.__avisoCarga()"></script>
 </body>
 </html>

@@ -60,31 +60,60 @@ export function esperarVoces(ms = 900) {
 }
 
 /**
- * Intenta hablar e informa qué pasó (rediseño 0.5.0):
+ * Intenta hablar e informa qué pasó:
  *   'iniciada'  → la voz empezó;
- *   'bloqueada' → el navegador no permite hablar sin una interacción previa (o no empezó a tiempo);
+ *   'lenta'     → todavía no empezó (el motor de Android puede tardar 3–5 s en frío): sigue en cola y sonará;
+ *   'bloqueada' → el navegador no permite hablar sin una interacción previa («not-allowed»);
  *   'sin-voz'   → no hay síntesis o no hay una voz LOCAL en español (no se usan voces en línea);
  *   'error'     → otro error de la síntesis.
- * El texto siempre se muestra en pantalla aparte: la voz es opcional.
+ * El texto siempre se muestra en pantalla aparte: la voz es opcional. Nunca bloquea la interfaz.
  */
-export async function intentarHablar(texto, { alIniciar, alTerminar, espera = 1500 } = {}) {
+// Correcciones 0.8.1 para Chrome de Android (voz que a veces no sonaba y sí después de recargar):
+//   1. Las voces llegan tarde la primera vez (el motor de texto a voz arranca en frío): se espera más (hasta 3 s).
+//   2. Chrome puede descartar el SpeechSynthesisUtterance por recolección de basura antes de que empiece y entonces
+//      no avisa nada: se guarda una referencia hasta que termina.
+//   3. cancel() seguido de inmediato por speak() a veces se traga la frase nueva: solo se cancela si hay algo sonando
+//      y se espera un instante antes de hablar.
+//   4. El arranque en frío puede tardar más que la espera: antes se CANCELABA la frase («bloqueada»); ahora se deja
+//      en cola (si empieza tarde, suena igual) y solo se informa que no empezó a tiempo.
+//   5. (versión definitiva 0.8.1, tras el diagnóstico en la Lenovo: la voz tarda 3,3–4,0 s en empezar en frío y
+//      0,25 s en caliente) En Chrome, speechSynthesis.speaking es true DESDE QUE SE PIDE la frase, no desde que suena:
+//      otra petición o un cambio de pantalla durante el arranque la cancelaban. Ahora la app lleva su propio registro:
+//      solo se cancela una frase que YA SUENA; las que Android aún está arrancando se respetan y lo nuevo se pone en cola.
+const vivas = new Set(); // referencias fuertes a nuestras frases hasta que terminan (ver 2)
+let sonando = null; // frase nuestra que ya empezó a sonar (onstart) y no ha terminado
+const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+const hayFrasesArrancando = () => [...vivas].some((u) => u !== sonando);
+
+export async function intentarHablar(texto, { alIniciar, alTerminar, espera = 8000, esperaVoces = 3000 } = {}) {
   if (!vozSoportada()) return 'sin-voz';
-  await esperarVoces();
+  await esperarVoces(esperaVoces);
   const voz = vozLocalEspanol();
   if (!voz) return 'sin-voz';
-  detener();
+  const s = sintesis();
+  if (sonando || (s.speaking && !vivas.size)) { s.cancel(); await pausa(80); } // reemplaza lo que se está oyendo
+  // Si solo hay una frase nuestra arrancando (Android en frío), NO se cancela: la nueva queda en cola detrás.
+  if (s.paused) s.resume();
   return new Promise((resolver) => {
     let resuelto = false;
     const responder = (r) => { if (!resuelto) { resuelto = true; clearTimeout(t); resolver(r); } };
     const u = new window.SpeechSynthesisUtterance(texto);
+    vivas.add(u);
     u.voice = voz;
     u.lang = voz.lang;
     u.rate = 1;
     let empezo = false; // «terminar» solo cuenta si la voz llegó a empezar (un bloqueo no es un final de voz)
-    u.onstart = () => { empezo = true; alIniciar?.(); responder('iniciada'); };
-    u.onend = () => { if (empezo) alTerminar?.(); };
-    u.onerror = (e) => { if (empezo) alTerminar?.(); responder(e?.error === 'not-allowed' ? 'bloqueada' : 'error'); };
-    const t = setTimeout(() => { if (!resuelto) { sintesis().cancel(); responder('bloqueada'); } }, espera);
-    sintesis().speak(u);
+    const soltar = () => { vivas.delete(u); if (sonando === u) sonando = null; };
+    u.onstart = () => { empezo = true; sonando = u; alIniciar?.(); responder('iniciada'); };
+    u.onend = () => { soltar(); if (empezo) alTerminar?.(); };
+    u.onerror = (e) => { soltar(); if (empezo) alTerminar?.(); responder(e?.error === 'not-allowed' ? 'bloqueada' : 'error'); };
+    const t = setTimeout(() => responder('lenta'), espera); // no se cancela: si empieza más tarde, se oye igual
+    s.speak(u);
   });
+}
+
+/** Al cambiar de pantalla: calla lo que ya suena, pero respeta una frase que Android todavía está arrancando. */
+export function detenerSiSuena() {
+  if (!vozSoportada()) return;
+  if (sonando || (sintesis().speaking && !hayFrasesArrancando())) sintesis().cancel();
 }

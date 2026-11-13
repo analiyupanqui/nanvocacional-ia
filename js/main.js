@@ -22,6 +22,7 @@ import { SALUDO, MENSAJES_HITO, fraseResultado } from './ui/nani-mensajes.js';
 import { EJEMPLOS_FERIA, respuestasDeEjemplo } from './data/ejemplos-feria.js';
 import { puntuar } from './cuestionarios/puntuacion.js';
 import * as Chat from './ui/chat-nani.js';
+import { destello } from './ui/destello.js';
 
 const instrumento = obtenerInstrumento(); // cuestionario provisional propio (no O*NET)
 
@@ -103,7 +104,8 @@ function render() {
   // La voz se detiene al cambiar de vista (en el módulo docente también al cambiar de sección o de etapa),
   // pero no al redibujar la misma vista (elegir una respuesta, abrir un desplegable).
   let claveVista = pantalla;
-  if (claveVista !== ultimaClaveVista) Voz.detener();
+  // Estudiante: respeta una frase que Android todavía está arrancando. Módulo docente: sin cambios (detiene todo).
+  if (claveVista !== ultimaClaveVista) { if (pantalla === 'docente') Voz.detener(); else Voz.detenerSiSuena(); }
   ultimaClaveVista = claveVista;
   app.innerHTML = html;
   cerrarMenu();
@@ -331,45 +333,42 @@ vozBoton.addEventListener('click', () => {
 });
 NaniVoz.alCambiarHabla((hablando) => {
   document.querySelectorAll('.nani-vivo').forEach((n) => n.classList.toggle('hablando', hablando));
-  if (!hablando && !bienvenida.hidden) programarCierre(1200); // al terminar el saludo, la bienvenida se retira sola
 });
 
-// ---- Bienvenida: una sola vez por apertura, en la portada; nunca bloquea la navegación ----
+// ---- Bienvenida 0.8.1: una sola vez por apertura, en la portada; un solo toque para entrar ----
+// No hay voz automática: la voz y el destello sonoro se intentan al pulsar «¡Vamos a comenzar!» (interacción que
+// Android exige). Si no hay voz, el saludo sigue escrito en la portada y la app funciona igual.
 const bienvenida = document.getElementById('bienvenida');
-let temporizadorBienvenida = null;
-let esperandoToque = false;
-function programarCierre(ms) { clearTimeout(temporizadorBienvenida); temporizadorBienvenida = setTimeout(cerrarBienvenida, ms); }
 function cerrarBienvenida() {
   if (bienvenida.hidden) return;
-  clearTimeout(temporizadorBienvenida);
-  esperandoToque = false;
   const fin = () => { bienvenida.hidden = true; bienvenida.classList.remove('bienvenida--sale'); bienvenida.innerHTML = ''; app.querySelector('[data-enfoque]')?.focus({ preventScroll: true }); };
   if (movimientoReducido()) fin();
   else { bienvenida.classList.add('bienvenida--sale'); setTimeout(fin, 260); }
 }
-async function saludar(forzar = false) {
-  const r = await NaniVoz.decir(SALUDO, { clave: 'saludo', forzar });
-  const pista = document.getElementById('bienvenida-pista');
-  if (r === 'bloqueada' && !bienvenida.hidden) { esperandoToque = true; if (pista) pista.hidden = false; }
-  if (r === 'iniciada' && pista) pista.hidden = true;
-  return r;
-}
 function mostrarBienvenida() {
   bienvenida.innerHTML = V.vistaBienvenida();
   bienvenida.hidden = false;
-  programarCierre(5000); // si nadie toca y la voz no suena, la portada aparece sola
-  saludar(); // intenta la voz automática; si el navegador la bloquea, aparece «Toca para escucharme»
+  bienvenida.querySelector('[data-bienvenida="comenzar"]')?.focus({ preventScroll: true });
 }
-// Sin botones: un toque reproduce el saludo si el navegador lo bloqueó; si no, pasa directo a la portada.
-bienvenida.addEventListener('click', () => {
-  if (esperandoToque && NaniVoz.vozActiva()) {
-    esperandoToque = false;
-    document.getElementById('bienvenida-pista')?.setAttribute('hidden', '');
-    programarCierre(9000);
-    saludar().then((r) => { if (r !== 'iniciada') programarCierre(600); });
-    return;
-  }
+function comenzarConSonido() {
   cerrarBienvenida();
+  if (!NaniVoz.vozActiva()) return; // silenciada: ni destello ni voz
+  destello(); // dentro del toque: permitido por Android
+  // La voz se pide en el MISMO toque (candidata final 0.8.1): antes esperaba 420 ms. Si falla, la app ya está abierta.
+  NaniVoz.decir(SALUDO).then((r) => {
+    if (r === 'sin-voz') avisar('No hay una voz en español instalada: Ñani te acompaña con texto.');
+    else if (r === 'bloqueada' || r === 'error') avisar('La voz no empezó. Puedes leer a Ñani o tocar «Escuchar».');
+  });
+}
+bienvenida.addEventListener('click', (ev) => {
+  if (ev.target.closest('[data-bienvenida="comenzar"]')) comenzarConSonido();
+});
+bienvenida.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Tab') return; // el foco no sale de la bienvenida mientras está abierta
+  const botones = [...bienvenida.querySelectorAll('button')];
+  const i = botones.indexOf(document.activeElement);
+  ev.preventDefault();
+  botones[(i + (ev.shiftKey ? botones.length - 1 : 1)) % botones.length]?.focus();
 });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !bienvenida.hidden) cerrarBienvenida(); });
 window.addEventListener('hashchange', cerrarBienvenida);
@@ -451,6 +450,7 @@ window.addEventListener('pagehide', () => Voz.detener());
 document.addEventListener('visibilitychange', () => { if (document.hidden) Voz.detener(); });
 Voz.prepararVoces();
 render();
+document.documentElement.dataset.appLista = '1'; // el aviso «No terminó de cargar» (index.html) ya no hace falta
 if (APP !== 'docente' && (location.hash === '' || location.hash === '#/')) mostrarBienvenida();
 // Service worker: solo archivos de la app, nunca resultados. Una versión nueva se aplica sola si no hay datos en
 // memoria; si los hay, se muestra el aviso «Actualizar ahora» (no se borra nada sin que la persona lo pida).

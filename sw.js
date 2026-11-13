@@ -3,7 +3,7 @@
 // Nunca guarda puntajes ni resultados: esos viven en memoria y no pasan por la red.
 // Solo atiende solicitudes GET del mismo origen; no envía datos a terceros.
 // IMPORTANTE: cada vez que cambie un archivo de app/, subir VERSION para que la tableta descargue la nueva copia.
-const VERSION = '0.8.0';
+const VERSION = '0.8.1';
 // Qué aplicación sirve este service worker (separación 0.8.0). En app/ es la completa (desarrollo y pruebas);
 // tools/construir-apps.js lo cambia a 'estudiante' (/nanvocacional-ia/) o 'docente' (/nanvocacional-ia/docente/).
 const APP = 'estudiante';
@@ -46,6 +46,7 @@ const ARCHIVOS = [
   "js/pwa.js",
   "js/ui/catalogo-busqueda.js",
   "js/ui/chat-nani.js",
+  "js/ui/destello.js",
   "js/ui/formato.js",
   "js/ui/identidad.js",
   "js/ui/nani-mensajes.js",

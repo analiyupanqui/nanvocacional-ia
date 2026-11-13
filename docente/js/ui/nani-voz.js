@@ -25,7 +25,7 @@ export const yaDicho = (clave) => dichos.has(clave);
 /**
  * @param {string} texto
  * @param {{ clave?: string|null, forzar?: boolean }} op  forzar = pulsación explícita de «Escuchar»
- * @returns {Promise<'iniciada'|'bloqueada'|'sin-voz'|'error'|'silenciada'|'repetido'>}
+ * @returns {Promise<'iniciada'|'lenta'|'bloqueada'|'sin-voz'|'error'|'silenciada'|'repetido'>}
  */
 export async function decir(texto, { clave = null, forzar = false } = {}) {
   if (!activa && !forzar) return 'silenciada';
@@ -34,7 +34,7 @@ export async function decir(texto, { clave = null, forzar = false } = {}) {
   if (clave) pendientes.add(clave);
   const r = await intentarHablar(texto, { alIniciar: () => avisar(true), alTerminar: () => avisar(false) });
   if (clave) pendientes.delete(clave);
-  if (r === 'iniciada' && clave) dichos.add(clave);
+  if ((r === 'iniciada' || r === 'lenta') && clave) dichos.add(clave); // «lenta» ya está en cola: no se vuelve a pedir
   return r;
 }
 
