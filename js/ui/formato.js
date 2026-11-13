@@ -25,5 +25,5 @@ export function leerNumero(texto) {
 }
 
 
-/** Porcentaje del puntaje máximo (escala 0–40 del artículo), redondeado a entero. */
-export const porcentaje = (v) => Math.round((v / PUNTAJE_MAX) * 100);
+/** Índice descriptivo: porcentaje del puntaje máximo de la escala (40 por defecto), redondeado a entero. No es una probabilidad. */
+export const porcentaje = (v, escalaMax = PUNTAJE_MAX) => Math.round((v / escalaMax) * 100);

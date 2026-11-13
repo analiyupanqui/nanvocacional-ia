@@ -1,17 +1,29 @@
-// Navegación y estado en memoria de los módulos estudiante (#/perfil, #/resultados) y docente (#/docente/...).
+// Navegación y estado en memoria de los módulos estudiante (#/cuestionario, #/resultados; modo demostración
+// #/perfil) y docente (#/docente/...).
 // Privacidad: el estado vive SOLO en memoria (sin almacenamiento del navegador, sin cookies, sin red).
-// Las rutas (#/...) nunca contienen puntajes; recargar la página borra la sesión.
+// Las rutas (#/...) nunca contienen respuestas ni puntajes; recargar la página borra la sesión.
+// Las respuestas del cuestionario se descartan en cuanto se calcula el resultado.
+// Separación 0.8.0: el código exclusivo del módulo docente está marcado (líneas y bloques; ver la sintaxis en
+// tools/construir-apps.js), que lo elimina en la app del estudiante: no viaja en sus archivos.
+import { APP } from './config-app.js';
 import { LETRAS, validarPuntajes } from './core/riasec.js';
-import { recomendar } from './core/recomendador.js';
 import { PERFILES_DEMO } from './data/perfiles-demo.js';
 import { REFERENCIA_PREDETERMINADA } from './data/provincias-referencia.js';
 import { leerNumero } from './ui/formato.js';
 import { nani } from './ui/identidad.js';
 import * as V from './ui/vistas.js';
-import * as D from './ui/docente.js';
-import { filtrarCatalogo } from './ui/catalogo-busqueda.js';
 import * as Voz from './ui/voz.js';
 import { iniciarPWA } from './pwa.js';
+import { obtenerInstrumento } from './cuestionarios/registro.js';
+import * as R from './cuestionarios/recorrido.js';
+import { explorarCarreras, alternarInteresada } from './core/exploracion.js';
+import * as NaniVoz from './ui/nani-voz.js';
+import { SALUDO, MENSAJES_HITO, fraseResultado } from './ui/nani-mensajes.js';
+import { EJEMPLOS_FERIA, respuestasDeEjemplo } from './data/ejemplos-feria.js';
+import { puntuar } from './cuestionarios/puntuacion.js';
+import * as Chat from './ui/chat-nani.js';
+
+const instrumento = obtenerInstrumento(); // cuestionario provisional propio (no O*NET)
 
 const app = document.getElementById('app');
 const avisoFlotante = document.getElementById('aviso-flotante');
@@ -21,16 +33,27 @@ const dialogo = document.getElementById('dialogo-borrar');
 document.getElementById('marca-logo').innerHTML = nani({ expresion: 'feliz' });
 
 // provincia: por defecto Abancay (referencia Lambrama, Abancay); '' = sin referencia; texto = otra provincia.
-let sesion = null; // { puntajes, demoId|null, provincia, cambiandoProvincia }
+let sesion = null; // { puntajes, escalaMax, origen: 'cuestionario'|'demo'|'manual', demoId|null, provincia, cambiandoProvincia }
+let recorrido = null; // cuestionario en curso: { indice, respuestas } solo en memoria
 let borrador = { manual: null, errores: [] };
+const FILTROS_INICIALES = { texto: '', universidad: '', ubicacion: '', orden: 'afinidad' };
+let filtrosExplorar = { ...FILTROS_INICIALES }; // exploración de las 23 carreras: solo memoria
 let destinoTrasBorrar = '#/';
-let docente = D.estadoDocenteInicial(); // módulo docente: solo memoria, sin cuentas ni historiales
+const datosDeOtrosModulos = []; // funciones que indican si otro módulo tiene datos en memoria
+let ultimaPantalla = null; // para animar solo el cambio de pregunta y no cortar la voz al redibujar la misma pantalla
+let ultimoIndice = -1;
+let ultimaClaveVista = null;
+let contadorSesion = 0; // identifica cada resultado para que Ñani diga su frase una sola vez
+const movimientoReducido = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 function borrarTodo() {
   Voz.detener();
   sesion = null;
+  recorrido = null;
   borrador = { manual: null, errores: [] };
-  docente = D.estadoDocenteInicial();
+  filtrosExplorar = { ...FILTROS_INICIALES };
+  NaniVoz.olvidar('cuest-');
+  NaniVoz.olvidar('res-');
 }
 
 function ir(ruta, { reemplazar = false } = {}) {
@@ -46,16 +69,22 @@ function avisar(texto) {
   avisar.t = setTimeout(() => avisoFlotante.classList.remove('visible'), 3000);
 }
 
-const recomendacion = () => recomendar(sesion.puntajes, { provinciaReferencia: sesion.provincia || null });
+// Página del estudiante: las 23 carreras por afinidad descriptiva (seis puntuaciones), sin cercanía en el orden.
+const exploracion = () => explorarCarreras(sesion.puntajes, { provinciaReferencia: sesion.provincia || null, escalaMax: sesion.escalaMax ?? 40 });
 
 function render() {
   const [pantalla = '', sub = ''] = location.hash.replace(/^#\/?/, '').split('/');
-  if (['resultados', 'carreras', 'detalle'].includes(pantalla) && !sesion) {
-    location.replace('#/perfil');
+  // App docente: su inicio es el módulo docente (sin portada del estudiante ni bienvenida).
+  if (APP === 'docente' && pantalla === '') { location.replace('#/docente/asistente'); return; }
+  if (['resultados', 'detalle'].includes(pantalla) && !sesion) {
+    location.replace('#/');
     return;
   }
-  // Rutas de versiones anteriores (carreras, detalle): ahora todo está en la página única.
-  if (pantalla === 'carreras' || pantalla === 'detalle') {
+  // Sin cuestionario en curso, #/cuestionario empieza uno nuevo (las respuestas anteriores ya se descartaron).
+  if (pantalla === 'cuestionario' && !recorrido) recorrido = R.crearRecorrido(instrumento);
+  const animarPregunta = pantalla === 'cuestionario' && recorrido.indice !== ultimoIndice && !movimientoReducido();
+  // Ruta de versiones anteriores (detalle): ahora está en la página única.
+  if (pantalla === 'detalle') {
     location.replace('#/resultados');
     return;
   }
@@ -63,23 +92,40 @@ function render() {
   let html;
   switch (pantalla) {
     case '': html = V.vistaInicio(); break;
+    case 'cuestionario': html = V.vistaPregunta(instrumento, recorrido, { animar: animarPregunta }); break;
+    case 'feria': html = V.vistaFeria(); break;
     case 'perfil': html = V.vistaPerfil(borrador); break;
-    case 'resultados': html = V.vistaResultados(sesion, recomendacion()); break;
-    case 'docente': {
-      const r = docente.puntajes ? recomendar(docente.puntajes, { provinciaReferencia: docente.provincia || null }) : null;
-      html = D.vistaDocente(sub, docente, r);
-      break;
-    }
+    case 'resultados': html = V.vistaResultados(sesion, exploracion()); break;
+    case 'carreras': html = V.vistaExplorar(sesion, sesion ? exploracion() : null, filtrosExplorar); break;
     default: html = V.vistaNoEncontrada();
   }
 
-  Voz.detener(); // la voz nunca continúa al cambiar o redibujar la pantalla
+  // La voz se detiene al cambiar de vista (en el módulo docente también al cambiar de sección o de etapa),
+  // pero no al redibujar la misma vista (elegir una respuesta, abrir un desplegable).
+  let claveVista = pantalla;
+  if (claveVista !== ultimaClaveVista) Voz.detener();
+  ultimaClaveVista = claveVista;
   app.innerHTML = html;
   cerrarMenu();
   window.scrollTo(0, 0);
   const h = app.querySelector('[data-enfoque]');
   if (h) h.focus({ preventScroll: true });
   document.title = `${h ? h.textContent.trim() : ''} · ÑanVocacional IA`.replace(/^ · /, '');
+  ultimaPantalla = pantalla;
+  ultimoIndice = pantalla === 'cuestionario' ? recorrido.indice : -1;
+  hablarSegunPantalla(pantalla);
+  actualizarNaniFlotante(pantalla);
+}
+
+// Ñani habla solo en momentos clave y cada mensaje una sola vez (clave): inicio, mitad y final del
+// cuestionario, y una frase en resultados. Nunca en cada pregunta.
+function hablarSegunPantalla(pantalla) {
+  if (pantalla === 'cuestionario') {
+    const m = MENSAJES_HITO[recorrido.indice];
+    if (m) NaniVoz.decir(m, { clave: `cuest-${recorrido.indice}` });
+  } else if (pantalla === 'resultados' && sesion) {
+    NaniVoz.decir(fraseResultado(exploracion().perfil), { clave: `res-${sesion.id}` });
+  }
 }
 
 function rerenderConservandoScroll(selectorFoco) {
@@ -106,8 +152,16 @@ document.addEventListener('click', (ev) => { if (!menuPanel.hidden && !ev.target
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !menuPanel.hidden) { cerrarMenu(); menuBoton.focus(); } });
 
 // ---- Borrado con confirmación ----
+const TEXTOS_DIALOGO = {
+  terminar: ['¿Terminar y borrar?', 'Se borrarán las respuestas, el perfil y los resultados de esta sesión. No se podrán recuperar.', 'Sí, borrar'],
+  reiniciar: ['¿Realizar nuevamente?', 'Se borrarán tus respuestas y tus resultados. Empezarás otra vez desde la pregunta 1.', 'Sí, empezar de nuevo'],
+};
 function pedirBorrado(destino) {
   destinoTrasBorrar = destino;
+  const [t, p, b] = TEXTOS_DIALOGO[destino === '#/cuestionario' ? 'reiniciar' : 'terminar'];
+  document.getElementById('dialogo-titulo').textContent = t;
+  document.getElementById('dialogo-texto').textContent = p;
+  document.getElementById('confirmar-borrar').textContent = b;
   cerrarMenu();
   dialogo.returnValue = '';
   dialogo.showModal();
@@ -126,11 +180,82 @@ app.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-accion]');
   if (!el) return;
   switch (el.dataset.accion) {
+    // ---- Cuestionario ----
+    case 'responder': {
+      recorrido = R.responder(instrumento, recorrido, Number(el.dataset.valor));
+      render();
+      app.querySelector('.respuesta[aria-checked="true"]')?.focus({ preventScroll: true });
+      break;
+    }
+    case 'siguiente':
+      recorrido = R.siguiente(instrumento, recorrido);
+      render();
+      if (recorrido.aviso) app.querySelector('.respuesta')?.focus({ preventScroll: true });
+      break;
+    case 'anterior':
+      recorrido = R.anterior(instrumento, recorrido);
+      render();
+      break;
+    case 'finalizar': {
+      const fin = R.finalizar(instrumento, recorrido);
+      if (!fin.ok) {
+        recorrido = fin.recorrido;
+        render();
+        return;
+      }
+      const { puntajes, escalaMax, instrumentoId } = fin.resultado;
+      sesion = { puntajes, escalaMax, id: ++contadorSesion, origen: 'cuestionario', instrumentoId, demoId: null, provincia: REFERENCIA_PREDETERMINADA, cambiandoProvincia: false, interesadas: [], eligiendoInteresadas: false, chat: null };
+      recorrido = null; // las respuestas se descartan: solo quedan las seis puntuaciones, en memoria
+      filtrosExplorar = { ...FILTROS_INICIALES }; // un resultado nuevo empieza con el orden por afinidad
+      ir('#/resultados', { reemplazar: true });
+      break;
+    }
+    // ---- Carreras que ya me interesan (no cambia puntajes ni orden) ----
+    case 'elegir-interesadas':
+      sesion.eligiendoInteresadas = !sesion.eligiendoInteresadas;
+      rerenderConservandoScroll('[data-accion="elegir-interesadas"]');
+      break;
+    case 'interesada': {
+      sesion.interesadas = alternarInteresada(sesion.interesadas ?? [], el.dataset.id);
+      rerenderConservandoScroll(`[data-accion="interesada"][data-id="${el.dataset.id}"]`);
+      break;
+    }
+    case 'reiniciar':
+      pedirBorrado('#/cuestionario');
+      break;
+    case 'voz-silenciar':
+      NaniVoz.silenciar();
+      actualizarBotonVoz();
+      avisar('Voz de Ñani silenciada.');
+      break;
+    // ---- Voz de Ñani: «Escuchar» lee el mensaje visible (pulsación explícita) ----
+    case 'escuchar':
+      NaniVoz.decir(el.dataset.mensaje ?? '', { forzar: true }).then((r) => {
+        actualizarBotonVoz();
+        if (r === 'sin-voz') avisar('No hay una voz en español instalada en este equipo: Ñani te acompaña con texto.');
+        else if (r === 'bloqueada' || r === 'error') avisar('El navegador no permitió la voz. Puedes leer el mensaje de Ñani.');
+      });
+      break;
+    // ---- Modo feria: ejemplos con respuestas FICTICIAS, siempre etiquetados ----
+    case 'feria-ejemplo': {
+      const e = EJEMPLOS_FERIA.find((x) => x.id === el.dataset.id);
+      if (!e) return;
+      const r = puntuar(instrumento, respuestasDeEjemplo(instrumento, e));
+      sesion = { puntajes: r.puntajes, escalaMax: r.escalaMax, id: ++contadorSesion, origen: 'feria', ejemploId: e.id, ejemploTitulo: `${e.titulo}: ${e.descripcion}`, instrumentoId: r.instrumentoId, demoId: null, provincia: REFERENCIA_PREDETERMINADA, cambiandoProvincia: false, interesadas: [], eligiendoInteresadas: false, chat: null };
+      recorrido = null;
+      filtrosExplorar = { ...FILTROS_INICIALES };
+      ir('#/resultados');
+      break;
+    }
+    case 'terminar-feria':
+      pedirBorrado('#/feria');
+      break;
     case 'demo': {
       const d = PERFILES_DEMO.find((p) => p.id === el.dataset.id);
       if (!d) return;
-      sesion = { puntajes: { ...d.puntajes }, demoId: d.id, provincia: REFERENCIA_PREDETERMINADA, cambiandoProvincia: false };
+      sesion = { puntajes: { ...d.puntajes }, escalaMax: 40, id: ++contadorSesion, origen: 'demo', demoId: d.id, provincia: REFERENCIA_PREDETERMINADA, cambiandoProvincia: false, interesadas: [], eligiendoInteresadas: false, chat: null };
       borrador = { manual: null, errores: [] };
+      filtrosExplorar = { ...FILTROS_INICIALES };
       ir('#/resultados');
       break;
     }
@@ -149,90 +274,27 @@ app.addEventListener('click', (ev) => {
     case 'nuevo':
       pedirBorrado('#/perfil');
       break;
-    case 'borrar-analizador':
-      Voz.detener();
-      docente = { ...D.estadoDocenteInicial(), texto: docente.texto, universidad: docente.universidad };
-      render();
-      avisar('Se borraron los puntajes.');
-      break;
-    case 'etapa': {
-      docente.etapa = Number(el.dataset.valor);
-      const y = window.scrollY;
-      render();
-      window.scrollTo(0, y);
-      document.querySelector('#etapa-actual .etapa__titulo')?.scrollIntoView({ block: 'nearest' });
-      app.querySelector('.etapa-paso[aria-current="step"]')?.focus({ preventScroll: true });
-      break;
-    }
-    case 'voz-escuchar': {
-      const etapa = el.closest('.voz')?.previousElementSibling;
-      const texto = etapa?.querySelector('.burbuja')?.dataset.voz ?? '';
-      const aviso = el.parentElement.querySelector('.voz__aviso');
-      const detenerBtn = el.parentElement.querySelector('.voz__detener');
-      const res = Voz.hablar(texto, {
-        alTerminar: () => { detenerBtn.hidden = true; el.hidden = false; etapa?.classList.remove('hablando'); },
-      });
-      if (res.ok) {
-        aviso.textContent = '';
-        el.hidden = true;
-        detenerBtn.hidden = false;
-        etapa?.classList.add('hablando');
-        detenerBtn.focus();
-      } else {
-        aviso.textContent = res.motivo;
-      }
-      break;
-    }
-    case 'voz-detener': {
-      Voz.detener();
-      el.hidden = true;
-      const escuchar = el.parentElement.querySelector('.voz__escuchar');
-      escuchar.hidden = false;
-      el.closest('.voz')?.previousElementSibling?.classList.remove('hablando');
-      escuchar.focus();
-      break;
-    }
     default:
   }
 });
 
-// Catálogo docente: buscador y selector de universidad. Actualiza solo la lista para no perder el foco.
-function actualizarCatalogo() {
-  const filas = filtrarCatalogo(D.filtroCatalogo(docente));
-  document.getElementById('resultados-catalogo').innerHTML = D.listaCatalogo(filas);
-  document.getElementById('conteo-catalogo').textContent = D.textoConteo(filas);
+// Exploración del estudiante: búsqueda, universidad, ubicación y orden. Actualiza solo la lista (conserva el foco).
+function actualizarExploracion() {
+  const ex = sesion ? exploracion() : null;
+  const filas = V.filasExploracion(ex, filtrosExplorar);
+  document.getElementById('lista-exploracion').innerHTML = V.listaExploracion(ex, filas);
+  document.getElementById('conteo-exploracion').textContent = V.textoConteoExploracion(filas, 23);
 }
-app.addEventListener('input', (ev) => {
-  if (ev.target.id !== 'buscar-catalogo') return;
-  docente.texto = ev.target.value;
-  actualizarCatalogo();
-});
-app.addEventListener('change', (ev) => {
-  if (ev.target.id !== 'filtro-universidad') return;
-  docente.universidad = ev.target.value;
-  actualizarCatalogo();
-});
+const CAMPOS_EXPLORAR = { 'buscar-carreras': 'texto', 'filtro-uni-est': 'universidad', 'filtro-ubicacion': 'ubicacion', 'orden-carreras': 'orden' };
+for (const tipo of ['input', 'change']) {
+  app.addEventListener(tipo, (ev) => {
+    const campo = CAMPOS_EXPLORAR[ev.target.id];
+    if (!campo) return;
+    filtrosExplorar[campo] = ev.target.value;
+    actualizarExploracion();
+  });
+}
 
-// Analizador docente: valida con el motor existente; los puntajes no se guardan.
-app.addEventListener('submit', (ev) => {
-  if (ev.target.id !== 'form-docente') return;
-  ev.preventDefault();
-  const datos = new FormData(ev.target);
-  const crudo = Object.fromEntries(LETRAS.map((l) => [l, String(datos.get(l) ?? '')]));
-  const puntajes = Object.fromEntries(LETRAS.map((l) => [l, leerNumero(crudo[l])]));
-  const v = validarPuntajes(puntajes);
-  docente.provincia = String(datos.get('provincia') ?? '');
-  docente.manual = crudo;
-  docente.errores = v.ok ? [] : v.errores;
-  docente.puntajes = v.ok ? puntajes : null;
-  docente.etapa = 1;
-  render();
-  if (v.ok) {
-    const t = document.getElementById('t-analisis');
-    t?.focus({ preventScroll: true });
-    t?.scrollIntoView({ block: 'start' });
-  } else app.querySelector('[aria-invalid="true"]')?.focus();
-});
 
 app.addEventListener('submit', (ev) => {
   if (ev.target.id !== 'form-manual') return;
@@ -247,9 +309,140 @@ app.addEventListener('submit', (ev) => {
     app.querySelector('[aria-invalid="true"]')?.focus();
     return;
   }
-  sesion = { puntajes, demoId: null, provincia: REFERENCIA_PREDETERMINADA, cambiandoProvincia: false };
+  sesion = { puntajes, escalaMax: 40, id: ++contadorSesion, origen: 'manual', demoId: null, provincia: REFERENCIA_PREDETERMINADA, cambiandoProvincia: false, interesadas: [], eligiendoInteresadas: false, chat: null };
+  filtrosExplorar = { ...FILTROS_INICIALES };
   borrador = { manual: crudo, errores: [] };
   ir('#/resultados');
+});
+
+// ---- Voz de Ñani: interruptor visible en la barra superior (solo memoria) ----
+const vozBoton = document.getElementById('voz-boton');
+function actualizarBotonVoz() {
+  const on = NaniVoz.vozActiva();
+  vozBoton.setAttribute('aria-pressed', String(on));
+  vozBoton.setAttribute('aria-label', on ? 'Voz de Ñani activada. Pulsa para silenciar' : 'Voz de Ñani silenciada. Pulsa para activar');
+  vozBoton.classList.toggle('voz-boton--off', !on);
+  if (!chatEl.hidden) pintarChat();
+}
+vozBoton.addEventListener('click', () => {
+  NaniVoz.alternar();
+  actualizarBotonVoz();
+  avisar(NaniVoz.vozActiva() ? 'Voz de Ñani activada.' : 'Voz de Ñani silenciada.');
+});
+NaniVoz.alCambiarHabla((hablando) => {
+  document.querySelectorAll('.nani-vivo').forEach((n) => n.classList.toggle('hablando', hablando));
+  if (!hablando && !bienvenida.hidden) programarCierre(1200); // al terminar el saludo, la bienvenida se retira sola
+});
+
+// ---- Bienvenida: una sola vez por apertura, en la portada; nunca bloquea la navegación ----
+const bienvenida = document.getElementById('bienvenida');
+let temporizadorBienvenida = null;
+let esperandoToque = false;
+function programarCierre(ms) { clearTimeout(temporizadorBienvenida); temporizadorBienvenida = setTimeout(cerrarBienvenida, ms); }
+function cerrarBienvenida() {
+  if (bienvenida.hidden) return;
+  clearTimeout(temporizadorBienvenida);
+  esperandoToque = false;
+  const fin = () => { bienvenida.hidden = true; bienvenida.classList.remove('bienvenida--sale'); bienvenida.innerHTML = ''; app.querySelector('[data-enfoque]')?.focus({ preventScroll: true }); };
+  if (movimientoReducido()) fin();
+  else { bienvenida.classList.add('bienvenida--sale'); setTimeout(fin, 260); }
+}
+async function saludar(forzar = false) {
+  const r = await NaniVoz.decir(SALUDO, { clave: 'saludo', forzar });
+  const pista = document.getElementById('bienvenida-pista');
+  if (r === 'bloqueada' && !bienvenida.hidden) { esperandoToque = true; if (pista) pista.hidden = false; }
+  if (r === 'iniciada' && pista) pista.hidden = true;
+  return r;
+}
+function mostrarBienvenida() {
+  bienvenida.innerHTML = V.vistaBienvenida();
+  bienvenida.hidden = false;
+  programarCierre(5000); // si nadie toca y la voz no suena, la portada aparece sola
+  saludar(); // intenta la voz automática; si el navegador la bloquea, aparece «Toca para escucharme»
+}
+// Sin botones: un toque reproduce el saludo si el navegador lo bloqueó; si no, pasa directo a la portada.
+bienvenida.addEventListener('click', () => {
+  if (esperandoToque && NaniVoz.vozActiva()) {
+    esperandoToque = false;
+    document.getElementById('bienvenida-pista')?.setAttribute('hidden', '');
+    programarCierre(9000);
+    saludar().then((r) => { if (r !== 'iniciada') programarCierre(600); });
+    return;
+  }
+  cerrarBienvenida();
+});
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !bienvenida.hidden) cerrarBienvenida(); });
+window.addEventListener('hashchange', cerrarBienvenida);
+
+// ---- Ñani flotante y chat guiado (solo en resultados y en «Explorar» con resultado; solo memoria) ----
+const flotante = document.getElementById('nani-flotante');
+const flotanteBoton = document.getElementById('nani-flotante-boton');
+const chatEl = document.getElementById('chat-nani');
+document.getElementById('nani-flotante-figura').innerHTML = nani({ expresion: 'saludo' });
+let temporizadorGlobo = null;
+function actualizarNaniFlotante(pantalla) {
+  const mostrar = !!sesion && (pantalla === 'resultados' || pantalla === 'carreras');
+  if (!mostrar) { cerrarChat({ devolverFoco: false }); flotante.hidden = true; document.body.classList.remove('con-nani-flotante'); return; }
+  if (flotante.hidden) {
+    flotante.hidden = false;
+    flotante.classList.remove('nani-flotante--plegado');
+    clearTimeout(temporizadorGlobo);
+    temporizadorGlobo = setTimeout(() => flotante.classList.add('nani-flotante--plegado'), 7000); // el globo se pliega solo
+  }
+  document.body.classList.add('con-nani-flotante');
+}
+function pintarChat() {
+  chatEl.innerHTML = `<div class="chat__panel">${Chat.vistaChat(sesion.chat, exploracion(), { vozActiva: NaniVoz.vozActiva() })}</div>`;
+  const lista = document.getElementById('chat-mensajes');
+  if (lista) lista.scrollTop = lista.scrollHeight;
+}
+function abrirChat() {
+  if (!sesion) return;
+  const nuevo = !sesion.chat;
+  if (nuevo) sesion.chat = Chat.iniciarChat();
+  pintarChat();
+  chatEl.hidden = false;
+  document.body.classList.add('chat-abierto');
+  flotanteBoton.setAttribute('aria-expanded', 'true');
+  flotante.classList.add('nani-flotante--plegado');
+  chatEl.querySelector('.chat__opcion')?.focus();
+  if (nuevo) NaniVoz.decir(Chat.PREGUNTA_INICIAL);
+}
+function cerrarChat({ devolverFoco = true } = {}) {
+  if (chatEl.hidden) return;
+  Voz.detener();
+  chatEl.hidden = true;
+  chatEl.innerHTML = '';
+  document.body.classList.remove('chat-abierto');
+  flotanteBoton.setAttribute('aria-expanded', 'false');
+  if (devolverFoco) flotanteBoton.focus();
+}
+flotanteBoton.addEventListener('click', () => (chatEl.hidden ? abrirChat() : cerrarChat()));
+chatEl.addEventListener('click', (ev) => {
+  if (ev.target === chatEl) { cerrarChat(); return; } // toque fuera del panel
+  const b = ev.target.closest('[data-chat]');
+  if (!b) return;
+  if (b.dataset.chat === 'cerrar') { cerrarChat(); return; }
+  if (b.dataset.chat === 'voz') { NaniVoz.alternar(); actualizarBotonVoz(); chatEl.querySelector('[data-chat="voz"]')?.focus(); return; }
+  if (b.dataset.chat === 'opcion') {
+    const opcion = sesion.chat.opciones[Number(b.dataset.indice)];
+    if (!opcion) return;
+    sesion.chat = Chat.elegir(sesion.chat, opcion, exploracion());
+    pintarChat();
+    chatEl.querySelector('.chat__opcion')?.focus({ preventScroll: true });
+    const ultimoYo = sesion.chat.mensajes.map((m) => m.de).lastIndexOf('yo');
+    NaniVoz.decir(Chat.textoNuevo(sesion.chat, ultimoYo + 1)); // la persona acaba de tocar: no es audio inesperado
+  }
+});
+// Diálogo accesible: Esc cierra y el foco no sale del chat con Tab.
+chatEl.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') { ev.stopPropagation(); cerrarChat(); return; }
+  if (ev.key !== 'Tab') return;
+  const focos = [...chatEl.querySelectorAll('button, [href], summary, [tabindex]:not([tabindex="-1"])')].filter((e) => e.offsetParent !== null);
+  if (!focos.length) return;
+  const [primero, ultimo] = [focos[0], focos[focos.length - 1]];
+  if (ev.shiftKey && document.activeElement === primero) { ev.preventDefault(); ultimo.focus(); }
+  else if (!ev.shiftKey && document.activeElement === ultimo) { ev.preventDefault(); primero.focus(); }
 });
 
 window.addEventListener('hashchange', render);
@@ -258,4 +451,10 @@ window.addEventListener('pagehide', () => Voz.detener());
 document.addEventListener('visibilitychange', () => { if (document.hidden) Voz.detener(); });
 Voz.prepararVoces();
 render();
-iniciarPWA(document.getElementById('estado-offline')); // service worker: solo archivos de la app, nunca resultados
+if (APP !== 'docente' && (location.hash === '' || location.hash === '#/')) mostrarBienvenida();
+// Service worker: solo archivos de la app, nunca resultados. Una versión nueva se aplica sola si no hay datos en
+// memoria; si los hay, se muestra el aviso «Actualizar ahora» (no se borra nada sin que la persona lo pida).
+iniciarPWA(document.getElementById('estado-offline'), {
+  aviso: document.getElementById('aviso-actualizacion'),
+  hayDatosEnMemoria: () => !!(sesion || recorrido || borrador.manual) || datosDeOtrosModulos.some((f) => f()),
+});

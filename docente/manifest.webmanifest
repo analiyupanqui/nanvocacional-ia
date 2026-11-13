@@ -1,0 +1,40 @@
+{
+  "name": "ÑanVocacional IA · Docente",
+  "short_name": "Ñan Docente",
+  "description": "Módulo docente de ÑanVocacional IA: guía RIASEC, catálogo verificado y analizador manual de seis puntajes. No guarda ni envía datos.",
+  "lang": "es",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8f2e4",
+  "theme_color": "#0f5c63",
+  "icons": [
+    {
+      "src": "iconos/icono-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "iconos/icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "iconos/icono-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "iconos/icono.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

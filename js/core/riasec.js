@@ -6,15 +6,32 @@ export const NOMBRES = Object.freeze({
   R: 'Realista', I: 'Investigador', A: 'Artístico', S: 'Social', E: 'Emprendedor', C: 'Convencional',
 });
 export const PUNTAJE_MIN = 0;
+/** Escala de referencia del artículo (0–40; Ai divide entre 40). Es la escala de los DEMO y de la entrada manual. */
 export const PUNTAJE_MAX = 40;
-/** Umbral precautorio del artículo (ecuación 1): regla de diseño, no punto de corte validado. */
+/** Umbral precautorio del artículo (ecuación 1) en la escala 0–40: regla de diseño, no punto de corte validado. */
 export const UMBRAL_D = 6;
+
+/**
+ * Umbral D para otra escala: proporcional al de 0–40 (6/40 del máximo). Con 0–20 da D < 3.
+ * Regla PROVISIONAL del prototipo (12-11-2026), pendiente de confirmación; no es regla del artículo ni de O*NET.
+ */
+export function umbralD(escalaMax = PUNTAJE_MAX) {
+  return (UMBRAL_D * escalaMax) / PUNTAJE_MAX;
+}
+
+function escalaValida(escalaMax) {
+  if (typeof escalaMax !== 'number' || !Number.isFinite(escalaMax) || escalaMax <= 0) {
+    throw new RangeError('La escala máxima debe ser un número positivo.');
+  }
+  return escalaMax;
+}
 
 export const MENSAJE_TUTOR =
   'Tus puntajes son parecidos entre sí. Te sugerimos conversar estos resultados con tu tutor o tutora. ' +
   'Esto no es un diagnóstico ni una clasificación vocacional concluyente.';
 
-export function validarPuntajes(p) {
+export function validarPuntajes(p, { escalaMax = PUNTAJE_MAX } = {}) {
+  escalaValida(escalaMax);
   if (p === null || typeof p !== 'object' || Array.isArray(p)) {
     return { ok: false, errores: ['Se requieren seis puntajes: R, I, A, S, E y C.'] };
   }
@@ -23,8 +40,8 @@ export function validarPuntajes(p) {
     const v = p[l];
     if (typeof v !== 'number' || !Number.isFinite(v)) {
       errores.push(`Falta el puntaje ${l} (${NOMBRES[l]}) o no es un número.`);
-    } else if (v < PUNTAJE_MIN || v > PUNTAJE_MAX) {
-      errores.push(`El puntaje ${l} (${NOMBRES[l]}) debe estar entre ${PUNTAJE_MIN} y ${PUNTAJE_MAX}.`);
+    } else if (v < PUNTAJE_MIN || v > escalaMax) {
+      errores.push(`El puntaje ${l} (${NOMBRES[l]}) debe estar entre ${PUNTAJE_MIN} y ${escalaMax}.`);
     }
   }
   const extras = Object.keys(p).filter((k) => !LETRAS.includes(k));
@@ -37,9 +54,11 @@ const idx = (l) => LETRAS.indexOf(l);
 /**
  * Calcula el perfil. Empates: se ordenan según R-I-A-S-E-C (decisión D3 del prototipo)
  * y se informan cuando afectan al código de tres letras.
+ * escalaMax: máximo de cada dimensión (40 por defecto: DEMO y entrada manual; 20: cuestionario provisional).
+ * El orden, el código y los empates no dependen de la escala; solo el umbral D se ajusta a ella.
  */
-export function calcularPerfil(p) {
-  const v = validarPuntajes(p);
+export function calcularPerfil(p, { escalaMax = PUNTAJE_MAX } = {}) {
+  const v = validarPuntajes(p, { escalaMax });
   if (!v.ok) throw new RangeError(v.errores.join(' '));
 
   const puntajes = Object.fromEntries(LETRAS.map((l) => [l, p[l]]));
@@ -66,16 +85,19 @@ export function calcularPerfil(p) {
   empates.sort((a, b) => b.puntaje - a.puntaje);
 
   const D = puntajes[orden[0]] - puntajes[orden[5]];
-  const pocoDiferenciado = D < UMBRAL_D;
+  const umbral = umbralD(escalaMax);
+  const pocoDiferenciado = D < umbral;
 
   return {
     puntajes,
+    escalaMax,
     orden,
     codigo,
     empates,
     D,
+    umbralD: umbral,
     pocoDiferenciado,
-    avisoTutor: pocoDiferenciado ? `${MENSAJE_TUTOR} (D = ${fmtNum(D)}; umbral provisional D < ${UMBRAL_D}.)` : null,
+    avisoTutor: pocoDiferenciado ? `${MENSAJE_TUTOR} (D = ${fmtNum(D)}; umbral provisional D < ${fmtNum(umbral)}.)` : null,
   };
 }
 

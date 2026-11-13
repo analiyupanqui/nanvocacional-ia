@@ -113,5 +113,5 @@ export function mensajeEtapa(etapa, r, { carreras = 0, otras = 0, preguntas = 0 
   }
   if (r.sinCoincidenciasLocales) return 'No encontré carreras verificadas para este código en el catálogo local. Eso no significa que no existan en la región.';
   if (p.pocoDiferenciado) return 'Revisa estas opciones solo después de conversar: sus intereses son parecidos.';
-  return `Estas ${carreras} carreras de Apurímac comparten al menos dos letras con ${p.codigo}.${otras > 0 ? ` En el catálogo hay ${otras} más que cumplen el criterio.` : ''}`;
+  return `Estas ${carreras} carreras de Apurímac tienen el mayor puntaje combinado del artículo para ${p.codigo}.${otras > 0 ? ` En el catálogo hay ${otras} más para revisar.` : ''}`;
 }

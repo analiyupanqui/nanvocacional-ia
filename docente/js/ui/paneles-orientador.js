@@ -5,6 +5,7 @@
 // cálculo por sede, valoración de expertas y fuentes.
 import { LETRAS, UMBRAL_D, fmtNum } from '../core/riasec.js';
 import { MIN_LETRAS_COINCIDENTES } from '../core/recomendador.js';
+import { afinidadDescriptiva } from '../core/exploracion.js';
 import { TIPOS_RIASEC, NOTA_TIPOS } from '../data/tipos-riasec.js';
 import { UNIVERSIDADES, FUENTE_UNIVERSIDADES } from '../data/universidades.js';
 import { etiquetaReferencia } from '../data/provincias-referencia.js';
@@ -35,26 +36,28 @@ export function listaPorConfirmar(r) {
 /** Panel técnico: perfil, reglas, cálculo por sede, valoración de expertas y fuentes. */
 export function panelTecnico(perfil, r, provincia) {
   const filas = r.verificadas.map((x) => `
-    <tr><td>${esc(x.carrera)}</td><td>${esc(x.universidad)}</td><td>${esc(x.sede.nombre)}</td><td>${f3(x.afinidad)}</td><td>${fP(x.proximidad)}</td><td>${f3(x.puntaje)}</td></tr>`).join('');
+    <tr><td>${esc(x.carrera)}</td><td>${esc(x.universidad)}</td><td>${esc(x.sede.nombre)}</td><td>${esc(x.coincidencias.join("") || "—")}</td><td>${f3(afinidadDescriptiva(perfil.puntajes, x.codigo))}</td><td>${f3(x.afinidad)}</td><td>${fP(x.proximidad)}</td><td>${f3(x.puntaje)}</td></tr>`).join('');
   const filasPC = r.porConfirmar.map((x) => `
-    <tr><td>${esc(x.carrera)}</td><td>${esc(x.universidad)}</td><td>Por confirmar</td><td>${f3(x.afinidad)}</td><td>—</td><td>—</td></tr>`).join('');
+    <tr><td>${esc(x.carrera)}</td><td>${esc(x.universidad)}</td><td>Por confirmar</td><td>${esc(x.coincidencias.join("") || "—")}</td><td>${f3(afinidadDescriptiva(perfil.puntajes, x.codigo))}</td><td>${f3(x.afinidad)}</td><td>—</td><td>—</td></tr>`).join('');
   const claves = new Map();
   [...r.verificadas, ...r.porConfirmar].forEach((x) => x.fuentes.forEach((f) => claves.set(f.clave, f)));
   const fuentes = [...claves.values()].map((f) => `<li>${esc(f.cita)}${f.url ? ` <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">Abrir (requiere internet)</a>` : ''} · Fecha de verificación: <span class="pendiente">${f.fechaVerificacion ? esc(f.fechaVerificacion) : 'Por registrar'}</span></li>`).join('');
   const valoradas = new Map();
   [...r.verificadas, ...r.porConfirmar].forEach((x) => x.valoracionExpertas && valoradas.set(x.valoracionExpertas.denominacion, x.valoracionExpertas.v));
 
+  const max = perfil.escalaMax ?? 40;
   return `
   <h3>Perfil</h3>
-  <p>Puntajes (0–40): ${LETRAS.map((l) => `${l} = ${fP(perfil.puntajes[l])}`).join(' · ')}. Código: ${perfil.codigo}. Diferenciación D = ${fP(perfil.D)}; si D &lt; ${UMBRAL_D} se sugiere conversar con el tutor (regla precautoria, no validada).</p>
+  <p>Puntajes (0–${max}): ${LETRAS.map((l) => `${l} = ${fP(perfil.puntajes[l])}`).join(' · ')}. Código: ${perfil.codigo}. Diferenciación D = ${fP(perfil.D)}; si D &lt; ${fmtNum(perfil.umbralD ?? UMBRAL_D)} se sugiere conversar con el tutor (regla precautoria, no validada).</p>
   ${perfil.empates.map((e) => `<p class="nota nota--chica">${esc(e.mensaje)}</p>`).join('')}
-  <p class="nota nota--chica">Porcentaje = puntaje / 40 × 100. La escala 0–40 es la normalización del artículo (Ai divide entre 40) y el rango que valida esta aplicación; los perfiles DEMO están definidos en ella. La escala del instrumento oficial está pendiente de confirmar.</p>
+  <p class="nota nota--chica">Porcentaje = puntaje / ${max} × 100. La escala 0–40 es la del artículo (Ai divide entre 40): la usan los perfiles DEMO y la entrada manual. El cuestionario provisional del estudiante (30 preguntas propias, no validadas) da 0–20 por dimensión; en ese caso r = puntaje / 20 y el umbral D se ajusta en proporción (D &lt; 3), regla provisional del prototipo.</p>
   <h3>Cómo se eligen y ordenan las carreras</h3>
   <p>Referencia geográfica: ${esc(etiquetaReferencia(provincia))}. Lambrama pertenece a la provincia de Abancay; por eso, de forma predeterminada, las sedes de Abancay reciben P = 1. P es una categoría por provincia, no una distancia ni un tiempo de viaje.</p>
-  <p>Filtro: al menos ${MIN_LETRAS_COINCIDENTES} letras en común con el código del estudiante (criterio provisional del prototipo, no validado). Afinidad Ai = (3·r1 + 2·r2 + r3) / 6, con r = puntaje / 40 en el orden del código de la carrera. Puntaje combinado = 0,80 × Ai + 0,20 × P, con P = 1 (misma provincia), 0,5 (otra provincia de Apurímac) o 0,3 (otra región). Sin provincia elegida, el orden es solo por afinidad. Las sedes por confirmar no reciben P ni puntaje.</p>
+  <p>Se calculan las 23 carreras: el filtro de ${MIN_LETRAS_COINCIDENTES} letras en común dejó de aplicarse el 12-11-2026 (decisión de la autora). Afinidad Ai = (3·r1 + 2·r2 + r3) / 6, con r = puntaje / ${max} en el orden del código de la carrera. Puntaje combinado = 0,80 × Ai + 0,20 × P, con P = 1 (misma provincia), 0,5 (otra provincia de Apurímac) o 0,3 (otra región). Sin provincia elegida, el orden es solo por afinidad. Las sedes por confirmar no reciben P ni puntaje.</p>
+  <p class="nota nota--chica"><strong>Diferencia de presentación:</strong> este módulo conserva el orden del artículo (puntaje combinado). La página del estudiante ordena por <em>afinidad descriptiva</em> (r): correlación de Pearson entre las seis puntuaciones y el perfil del código de la carrera (3, 2 y 1 en sus letras; 0 en las demás), sin usar la cercanía. Es una heurística propia del prototipo, no validada y no es una probabilidad.</p>
   <div class="tabla-desplazable"><table class="ficha ficha--calculos">
     <caption class="sr-only">Cálculo por sede</caption>
-    <thead><tr><th>Carrera</th><th>Univ.</th><th>Sede</th><th>Ai</th><th>P</th><th>Puntaje</th></tr></thead>
+    <thead><tr><th>Carrera</th><th>Univ.</th><th>Sede</th><th>Letras en común</th><th>r (6 puntajes)</th><th>Ai</th><th>P</th><th>Puntaje</th></tr></thead>
     <tbody>${filas}${filasPC}</tbody>
   </table></div>
   <p class="nota nota--chica">${esc(r.aviso)}</p>

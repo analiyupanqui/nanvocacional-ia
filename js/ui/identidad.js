@@ -1,5 +1,6 @@
 // Identidad visual de ÑanVocacional IA: mascota «Ñani» e íconos RIASEC, en SVG original y local.
 // Ñani: guía con forma de piedra de camino andino, birrete universitario y banda de motivo andino.
+import { esc } from './formato.js';
 
 /** Color propio de cada dimensión RIASEC (contraste suficiente con texto blanco grande). */
 export const COLOR_LETRA = Object.freeze({
@@ -68,3 +69,7 @@ export function icono(letra, clase = 'icono') {
 }
 
 export const ICONO_SEDE = '<svg class="icono-chico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+
+// Voz de Ñani: ícono y botón «Escuchar» (lee a pedido el mensaje visible). Compartidos por vistas y asistente.
+export const ICONO_VOZ = '<svg class="icono-voz" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+export const botonEscuchar = (texto, etiqueta = 'Escuchar a Ñani') => `<button type="button" class="boton-voz" data-accion="escuchar" data-mensaje="${esc(texto)}" aria-label="${esc(etiqueta)}">${ICONO_VOZ}</button>`;

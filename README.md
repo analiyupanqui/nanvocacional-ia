@@ -1,6 +1,7 @@
 # ÑanVocacional IA (prototipo de demostración)
 
-Versión 0.3.0. Aplicación web progresiva (PWA) estática de orientación vocacional para secundaria en Apurímac.
+Versión 0.8.0. Aplicaciones web progresivas (PWA) estáticas de orientación vocacional para secundaria en Apurímac:
+la del estudiante (esta dirección) y la docente (carpeta `docente/`), cada una con su propia copia sin conexión.
 
 - Recomendador **simbólico** basado en reglas RIASEC explícitas; **no** usa IA generativa ni aprendizaje automático.
 - **No pide nombres ni guarda resultados**: los puntajes viven solo en la memoria de la página y se borran al terminar.

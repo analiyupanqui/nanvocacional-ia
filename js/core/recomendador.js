@@ -1,5 +1,7 @@
 // Recomendador simbólico basado en reglas RIASEC (artículo final, ecuación 3 y apartado de diseño).
 // No es IA generativa ni aprendizaje automático. Las afinidades son orientativas, no probabilidades.
+// Son HEURÍSTICAS PROPIAS del prototipo (artículo + decisiones de la autora), no recomendaciones
+// psicométricamente validadas ni reglas de O*NET.
 // Lógica pura: no guarda ni envía datos.
 
 import { calcularPerfil, NOMBRES, LETRAS, PUNTAJE_MAX, fmtNum } from './riasec.js';
@@ -14,25 +16,33 @@ export const P_OTRA_PROVINCIA_REGION_BASE = 0.5;
 export const P_OTRA_REGION = 0.3;
 export const REGION_BASE = 'Apurímac';
 
-// Filtro de pertinencia: decisión D2 del prototipo (11-11-2026), NO regla del artículo ni validada.
-// Orden de sedes verificadas: puntaje combinado de la ecuación 3 (decisión de la autora, Sprint 2).
+// Filtro de pertinencia de 2 letras: decisión D2 del prototipo (11-11-2026), NO regla del artículo ni validada.
+// Desde el 12-11-2026 (decisión 1 de la autora tras la auditoría de pertinencia) YA NO es obligatorio:
+// minCoincidencias vale 0 por defecto y ninguna carrera se excluye por compartir pocas letras.
+// La constante se conserva solo para quien quiera reproducir el criterio anterior de forma explícita.
+// Orden de sedes verificadas: puntaje combinado de la ecuación 3 (módulo técnico/docente).
 export const MIN_LETRAS_COINCIDENTES = 2;
 
 export const MENSAJE_SIN_COINCIDENCIAS = 'No encontramos coincidencias en el catálogo local verificado.';
 export const MENSAJE_OTRAS_REGIONES = 'Alternativas de otras regiones pendientes de verificación.';
 export const AVISO_GENERAL =
   'Las afinidades son orientativas y no son probabilidades de éxito ni de admisión. ' +
-  'Los pesos 0,80 y 0,20, el umbral D < 6 y el filtro de dos letras coincidentes son reglas provisionales, no validadas.';
+  'Son heurísticas propias del prototipo, no recomendaciones validadas psicométricamente: los pesos 0,80 y 0,20, ' +
+  'el umbral D (D < 6 en la escala 0–40) y el orden propuesto son reglas provisionales, no validadas.';
 
 export function validarCodigo(codigo) {
   return typeof codigo === 'string' && codigo.length === 3 &&
     new Set(codigo).size === 3 && [...codigo].every((l) => LETRAS.includes(l));
 }
 
-/** Ai = (3·r1 + 2·r2 + r3) / 6, con r = puntaje/40 en el orden del código de la carrera. */
-export function calcularAfinidad(puntajes, codigoCarrera) {
+/**
+ * Ai = (3·r1 + 2·r2 + r3) / 6, con r = puntaje / escalaMax en el orden del código de la carrera.
+ * Con escalaMax = 40 es literalmente la ecuación 3 del artículo; con otra escala, r se normaliza
+ * entre su máximo (generalización del prototipo: Ai sigue entre 0 y 1).
+ */
+export function calcularAfinidad(puntajes, codigoCarrera, escalaMax = PUNTAJE_MAX) {
   if (!validarCodigo(codigoCarrera)) throw new RangeError(`Código RIASEC no válido: ${codigoCarrera}`);
-  const [r1, r2, r3] = [...codigoCarrera].map((l) => puntajes[l] / PUNTAJE_MAX);
+  const [r1, r2, r3] = [...codigoCarrera].map((l) => puntajes[l] / escalaMax);
   return (3 * r1 + 2 * r2 + r3) / 6;
 }
 
@@ -121,21 +131,21 @@ function ordenar(lista, ordenarPor) {
 
 /**
  * Genera recomendaciones filtradas y explicadas.
- * @param {object} puntajes  seis puntajes R,I,A,S,E,C (0–40)
- * @param {object} opciones  { provinciaReferencia?: string|null, catalogo?: array, ordenarPor?: 'afinidad'|'puntaje' }
+ * @param {object} puntajes  seis puntajes R,I,A,S,E,C (0 a escalaMax)
+ * @param {object} opciones  { provinciaReferencia?: string|null, catalogo?: array, ordenarPor?: 'afinidad'|'puntaje', escalaMax?: number (40) }
  *   ordenarPor 'puntaje' (por defecto, ecuación 3): puntaje combinado descendente; Ai desempata.
  *   Sin provincia de referencia el puntaje no existe y el orden queda por Ai.
  */
-export function recomendar(puntajes, { provinciaReferencia = null, catalogo = CATALOGO, ordenarPor = 'puntaje' } = {}) {
-  const perfil = calcularPerfil(puntajes);
+export function recomendar(puntajes, { provinciaReferencia = null, catalogo = CATALOGO, ordenarPor = 'puntaje', escalaMax = PUNTAJE_MAX, minCoincidencias = 0 } = {}) {
+  const perfil = calcularPerfil(puntajes, { escalaMax });
   const verificadas = [];
   const porConfirmar = [];
   let posicion = 0;
 
   for (const carrera of catalogo) {
     const coincidencias = letrasCoincidentes(perfil.codigo, carrera.codigo);
-    if (coincidencias.length < MIN_LETRAS_COINCIDENTES) continue;
-    const afinidad = calcularAfinidad(perfil.puntajes, carrera.codigo);
+    if (coincidencias.length < minCoincidencias) continue;
+    const afinidad = calcularAfinidad(perfil.puntajes, carrera.codigo, escalaMax);
     if (carrera.estadoSede === 'documentada' && carrera.sedes.length > 0) {
       for (const sede of carrera.sedes) { // cada sede se evalúa por separado
         const p = calcularProximidad(sede, provinciaReferencia);
@@ -152,7 +162,9 @@ export function recomendar(puntajes, { provinciaReferencia = null, catalogo = CA
   return {
     perfil,
     provinciaReferencia,
-    criterio: `Se muestran solo carreras cuyo código comparte al menos ${MIN_LETRAS_COINCIDENTES} letras con tu código (${perfil.codigo}). Criterio provisional del prototipo, no validado.`,
+    criterio: minCoincidencias > 0
+      ? `Se muestran solo carreras cuyo código comparte al menos ${minCoincidencias} letras con el código ${perfil.codigo} (criterio anterior, aplicado de forma explícita).`
+      : `Se calculan todas las carreras del catálogo, sin excluir ninguna por compartir pocas letras con el código ${perfil.codigo}.`,
     verificadas,
     porConfirmar,
     sinCoincidenciasLocales: verificadas.length === 0,

@@ -53,7 +53,7 @@ function formularioPuntajes(est) {
   const provincias = OPCIONES_PROVINCIA.map((o) => `<option value="${esc(o.valor)}"${o.valor === est.provincia ? ' selected' : ''}>${esc(o.etiqueta)}</option>`).join('');
   return `
   <form class="tarjeta" id="form-docente" novalidate autocomplete="off">
-    <p>Escriba los seis puntajes del estudiante (0 a ${PUNTAJE_MAX}). <strong>No escriba nombres.</strong> Nada se guarda.</p>
+    <p>Escriba los seis puntajes del estudiante (0 a ${PUNTAJE_MAX}). Si vienen de la app del estudiante (sobre 20), multiplique cada uno por 2. <strong>No escriba nombres.</strong> Nada se guarda.</p>
     ${est.errores.length ? `<div class="errores" role="alert"><strong>Revise los puntajes:</strong><ul>${est.errores.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
     <div class="formulario-puntajes">${campos}</div>
     <div class="form-docente__pie">
@@ -112,7 +112,7 @@ function etapaExplorar(r, tres, otrasTotal, prov, provincia) {
       <span class="carrera__sede">${ICONO_SEDE}<span>${g.sedes.map((s) => `${esc(s.sede.nombre)}${prov && s.sede.provincia === prov ? ' <em>· misma provincia</em>' : ''}`).join(' · ')}</span></span>
       <span class="carrera-chica__letras">${[...g.codigo].map((l) => letraChip(l, g.coincidencias.includes(l))).join('')}</span>
     </li>`).join('')}</ul>
-  <p class="nota nota--chica">Son las mismas 3 que ve el estudiante (orden del motor, referencia ${esc(etiquetaReferencia(provincia))}). Son orientativas, no un ranking.${tecnico.length ? ` El motor usa el código completo, incluido el desempate técnico de ${esc(unirLista(tecnico.map((l) => TIPOS_RIASEC[l].nombre)))}.` : ''}</p>
+  <p class="nota nota--chica">Orden del artículo: puntaje combinado 0,80·Ai + 0,20·P (referencia ${esc(etiquetaReferencia(provincia))}). El estudiante ve otro orden: afinidad descriptiva con sus seis puntuaciones, sin usar la cercanía. Son orientativas, no un ranking.${tecnico.length ? ` El motor usa el código completo, incluido el desempate técnico de ${esc(unirLista(tecnico.map((l) => TIPOS_RIASEC[l].nombre)))}.` : ''}</p>
   ${otrasTotal > tres.length ? '<p><a class="enlace" href="#/docente/catalogo">Consultar las 23 carreras en el catálogo →</a></p>' : ''}`;
 }
 
@@ -230,6 +230,7 @@ function paginaTecnica(est, r) {
   return `
   <p><a class="volver" href="#/docente/asistente">← Volver al asistente</a></p>
   <h2 class="h-seccion">Información técnica del prototipo</h2>
+  <p class="nota nota--info">Pruebas con datos ficticios (modo feria y perfiles DEMO): <a href="#/herramientas">Herramientas técnicas</a>. No forman parte del recorrido del estudiante.</p>
   <h3>Correspondencia con el artículo</h3>
   <div class="tabla-desplazable"><table class="ficha ficha--docente">
     <thead><tr><th>Componente</th><th>Origen</th></tr></thead>
@@ -237,12 +238,14 @@ function paginaTecnica(est, r) {
       <tr><td>Seis puntajes, código, D y aviso al tutor si D &lt; ${UMBRAL_D} (RF04)</td><td>Diseño del artículo (ecuación 1)</td></tr>
       <tr><td>Afinidad Ai y puntaje combinado ${fmtNum(PESO_AFINIDAD, 2)}·Ai + ${fmtNum(PESO_PROXIMIDAD, 2)}·P por sede; sedes por confirmar aparte (RF02, RF03)</td><td>Diseño del artículo (ecuación 3); pesos provisionales</td></tr>
       <tr><td>Catálogo de 23 carreras, códigos asignados, valoración de expertas</td><td>Tablas 3 y 4 del artículo</td></tr>
-      <tr><td>Filtro de al menos ${MIN_LETRAS_COINCIDENTES} letras, desempate R-I-A-S-E-C, referencia Lambrama (Abancay), 3 sugerencias</td><td>Reglas provisionales del prototipo (no están en el artículo)</td></tr>
+      <tr><td>Desempate R-I-A-S-E-C, referencia Lambrama (Abancay), 3 sugerencias en este módulo. El filtro de ${MIN_LETRAS_COINCIDENTES} letras ya no se aplica (12-11-2026)</td><td>Reglas provisionales del prototipo (no están en el artículo)</td></tr>
+      <tr><td>Página del estudiante: las 23 carreras ordenadas por afinidad descriptiva (correlación entre las seis puntuaciones y el perfil 3-2-1 del código), 5 visibles al inicio, cercanía solo informativa y filtro voluntario por ubicación</td><td>Heurística propia del prototipo (no está en el artículo; no validada). El puntaje combinado del artículo se conserva en este módulo</td></tr>
+      <tr><td>Cuestionario provisional de 30 preguntas propias (0–20 por dimensión)</td><td>Implementación exploratoria posterior; el artículo describe 60 ítems. No validado; no es O*NET</td></tr>
       <tr><td>Asistente de orientación: interpretación y preguntas por reglas; guía breve</td><td>Función nueva de apoyo al tutor (pendiente de revisión profesional)</td></tr>
-      <tr><td>Cuestionario de 60 ítems (RF01), otras regiones (RF06), funcionamiento offline (RNF02)</td><td>No implementados</td></tr>
+      <tr><td>Cuestionario de 60 ítems del artículo (RF01) u oficial de O*NET, otras regiones (RF06)</td><td>No implementados</td></tr>
     </tbody>
   </table></div>
-  <p class="nota nota--alerta">Implementación de demostración posterior al artículo. No se ha validado con estudiantes. Los pesos, el umbral D &lt; 6 y el filtro son reglas provisionales, no calibradas ni validadas.</p>
+  <p class="nota nota--alerta">Implementación de demostración posterior al artículo. No se ha validado con estudiantes. Los pesos, el umbral D y los órdenes propuestos son reglas provisionales, no calibradas ni validadas.</p>
   ${r ? `<h3>Cálculo del último análisis (código ${r.perfil.codigo})</h3>${panelTecnico(r.perfil, r, est.provincia)}<h4>Carreras con sede por confirmar</h4>${listaPorConfirmar(r)}` : '<p class="nota">Realice un análisis en el asistente para ver aquí el cálculo por sede.</p>'}
   <h3>Valoración preliminar de dos expertas (17 denominaciones)</h3>
   <div class="tabla-desplazable"><table class="ficha ficha--docente">
